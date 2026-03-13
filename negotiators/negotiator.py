@@ -1,6 +1,6 @@
 from negmas import SAONegotiator, ResponseType
 
-from bidding.bidding_strategy import BiddingStrategy
+from bidding.bidding_strategy import TimeBasedBidding
 from acceptance.acceptance_strategy import AcceptanceStrategy
 from opponent_modeling.frequency_opponent_model import OpponentModel
 
@@ -9,7 +9,7 @@ class Basic_Negotiator(SAONegotiator):
 
     def on_negotiation_start(self, state):
         self.opponent_model = OpponentModel(self.nmi.issues)
-        self.bidding = BiddingStrategy(self.ufun)
+        self.bidding = TimeBasedBidding(self.ufun)
         self.acceptance = AcceptanceStrategy(self.ufun, self.bidding)
 
     def respond(self, state):
