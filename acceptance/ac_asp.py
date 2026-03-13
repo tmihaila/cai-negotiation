@@ -1,4 +1,4 @@
-class ACnext:
+class ACasp:
     def __init__(self, ufun, bidding_strategy):
         self.ufun = ufun
         self.bidding = bidding_strategy
@@ -7,6 +7,5 @@ class ACnext:
         if offer is None:
             return False
         offer_utility = self.ufun(offer)
-        next_bid = self.bidding.generate_bid(outcome_space, time)
-        next_utility = self.ufun(next_bid)
-        return offer_utility >= next_utility
+        aspiration = self.bidding.target_utility(time)
+        return offer_utility >= aspiration
