@@ -36,6 +36,47 @@ def compute_nash_point(pareto_frontier, reservation1=0.0, reservation2=0.0):
     return best
 
 
+def compute_kalai_smorodinsky_point(pareto_frontier, reservation1=0.0, reservation2=0.0):
+    """
+    Kalai-Smorodinsky Bargaining Solution: finds the point on the Pareto frontier
+    that maintains proportional gains from the disagreement point.
+    
+    The solution lies on the line from (r1, r2) to the ideal point (max_u1, max_u2),
+    where max_u1 and max_u2 are the maximum utilities each agent can achieve on the frontier.
+    
+    Returns (outcome, u1, u2) or None if no valid point exists.
+    """
+    if not pareto_frontier:
+        return None
+    
+    max_u1 = max(u1 for (_, u1, _) in pareto_frontier)
+    max_u2 = max(u2 for (_, _, u2) in pareto_frontier)
+    
+    if max_u1 <= reservation1 or max_u2 <= reservation2:
+        return None
+    
+    best = None
+    min_distance = float('inf')
+    
+    for (outcome, u1, u2) in pareto_frontier:
+        gain1 = u1 - reservation1
+        gain2 = u2 - reservation2
+        
+        if gain1 < 0 or gain2 < 0:
+            continue
+        
+        normalized_gain1 = gain1 / (max_u1 - reservation1)
+        normalized_gain2 = gain2 / (max_u2 - reservation2)
+        
+        distance = abs(normalized_gain1 - normalized_gain2)
+        
+        if distance < min_distance:
+            min_distance = distance
+            best = (outcome, u1, u2)
+    
+    return best
+
+
 def compute_social_welfare(agreement, ufun1, ufun2):
     """
     Utilitarian social welfare: u1 + u2
@@ -47,6 +88,26 @@ def compute_social_welfare(agreement, ufun1, ufun2):
     u1 = float(ufun1(agreement))
     u2 = float(ufun2(agreement))
     return u1 + u2, min(u1, u2)
+
+
+def compute_pareto_distance(agreement, pareto_frontier, ufun1, ufun2):
+    """
+    Compute the minimum Euclidean distance from the agreement to the Pareto frontier.
+    Returns the distance to the closest Pareto-optimal point, or None if no agreement.
+    """
+    if agreement is None or not pareto_frontier:
+        return None
+    
+    u1_agreement = float(ufun1(agreement))
+    u2_agreement = float(ufun2(agreement))
+    
+    min_distance = float('inf')
+    for (outcome, u1_pareto, u2_pareto) in pareto_frontier:
+        distance = ((u1_agreement - u1_pareto) ** 2 + (u2_agreement - u2_pareto) ** 2) ** 0.5
+        if distance < min_distance:
+            min_distance = distance
+    
+    return min_distance
 
 
 def classify_step(u1_before, u2_before, u1_after, u2_after, epsilon=1e-4):
