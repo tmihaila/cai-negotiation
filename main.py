@@ -1,60 +1,21 @@
 import plotly.io as pio
-from negmas import SAOMechanism, TimeBasedConcedingNegotiator, make_issue
-from negmas.preferences import LinearAdditiveUtilityFunction as LUFun
-from negmas.preferences.value_fun import LinearFun, IdentityFun, AffineFun
+from negmas import SAOMechanism, TimeBasedConcedingNegotiator
+import importlib
 
 from negotiators.boa_negociator import BOANegotiator
 from analysis.metrics import (
     compute_pareto_frontier,
     compute_nash_point,
+    compute_kalai_smorodinsky_point,
     compute_social_welfare,
+    compute_pareto_distance,
 )
 
 pio.renderers.default = "browser"
 
-# ─── Issues ─────────────────────────────────────────────────────────────────
-
-issues = [
-    make_issue(name="price",    values=10),
-    make_issue(name="delivery", values=5),
-    make_issue(name="quality",  values=3),
-]
-
 N_STEPS = 100
-
-# ─── Opposing utility functions ──────────────────────────────────────────────
-# Agent  = BUYER:  wants low price, fast delivery, high quality
-# Opponent = SELLER: wants high price, slow delivery, high quality
-
-def make_ufuns():
-    from negmas.preferences import LinearAdditiveUtilityFunction as LUFun
-    from negmas.outcomes import make_issue
-
-    # Buyer: price low = good (value 0 = best), delivery low = good, quality high = good
-    ufun_buyer = LUFun(
-        values={
-            "price":    lambda v: 1.0 - v / 9.0,   # price 0 → 1.0, price 9 → 0.0
-            "delivery": lambda v: 1.0 - v / 4.0,   # delivery 0 → 1.0, delivery 4 → 0.0
-            "quality":  lambda v: v / 2.0,          # quality 0 → 0.0, quality 2 → 1.0
-        },
-        weights={"price": 0.6, "delivery": 0.2, "quality": 0.2},
-        issues=issues,
-        reserved_value=0.0,
-    )
-
-    # Seller: price high = good, delivery slow = ok, quality high = good
-    ufun_seller = LUFun(
-        values={
-            "price":    lambda v: v / 9.0,          # price 9 → 1.0, price 0 → 0.0
-            "delivery": lambda v: v / 4.0,          # delivery 4 → 1.0, delivery 0 → 0.0
-            "quality":  lambda v: v / 2.0,
-        },
-        weights={"price": 0.6, "delivery": 0.2, "quality": 0.2},
-        issues=issues,
-        reserved_value=0.0,
-    )
-
-    return ufun_buyer.scale_max(1.0), ufun_seller.scale_max(1.0)
+N_RUNS_PER_STRATEGY = 1
+N_DOMAINS = 20
 
 # ─── Combos ──────────────────────────────────────────────────────────────────
 
@@ -68,12 +29,16 @@ COMBOS = [
 
 # ─── Runner ──────────────────────────────────────────────────────────────────
 
-def run_session(bidding, acceptance, opponent_model, label):
+def run_session(bidding, acceptance, opponent_model, label, domain_num):
+    """Run a single negotiation session on a specific domain."""
+    domain_module = importlib.import_module(f'domains_python.domain{domain_num:02d}')
+    issues = domain_module.issues
+    ufun_agent = domain_module.ufun_a
+    ufun_opponent = domain_module.ufun_b
+    
     session = SAOMechanism(issues=issues, n_steps=N_STEPS)
 
-    ufun_agent, ufun_opponent = make_ufuns()
-
-    opponent = TimeBasedConcedingNegotiator(name="seller")
+    opponent = TimeBasedConcedingNegotiator(name="agent_b")
     agent    = BOANegotiator(
         bidding_strategy=bidding,
         acceptance_strategy=acceptance,
@@ -95,32 +60,109 @@ def run_session(bidding, acceptance, opponent_model, label):
     all_outcomes = list(session.outcome_space.enumerate_or_sample(300))
     pareto = compute_pareto_frontier(all_outcomes, ufun_agent, ufun_opponent)
     nash   = compute_nash_point(pareto, ufun_agent.reserved_value, ufun_opponent.reserved_value)
-
+    ks     = compute_kalai_smorodinsky_point(pareto, ufun_agent.reserved_value, ufun_opponent.reserved_value)
+    
     nash_u1 = nash[1] if nash else None
     nash_u2 = nash[2] if nash else None
     nash_distance = None
     if nash and agreement:
         nash_distance = ((u_agent - nash_u1) ** 2 + (u_opponent - nash_u2) ** 2) ** 0.5
+    
+    ks_u1 = ks[1] if ks else None
+    ks_u2 = ks[2] if ks else None
+    ks_distance = None
+    if ks and agreement:
+        ks_distance = ((u_agent - ks_u1) ** 2 + (u_opponent - ks_u2) ** 2) ** 0.5
+    
+    pareto_distance = compute_pareto_distance(agreement, pareto, ufun_agent, ufun_opponent)
 
     return {
-        "label":         label,
-        "agreed":        agreement is not None,
-        "rounds":        result.step,
-        "u_agent":       round(u_agent, 4),
-        "u_opponent":    round(u_opponent, 4),
-        "util_welfare":  round(util_sw, 4) if util_sw else None,
-        "egal_welfare":  round(egal_sw, 4) if egal_sw else None,
-        "pareto_size":   len(pareto),
-        "nash_u1":       round(nash_u1, 4) if nash_u1 else None,
-        "nash_u2":       round(nash_u2, 4) if nash_u2 else None,
-        "nash_distance": round(nash_distance, 4) if nash_distance else None,
+        "label":          label,
+        "domain":         domain_num,
+        "agreed":         agreement is not None,
+        "rounds":         result.step,
+        "u_agent":        u_agent,
+        "u_opponent":     u_opponent,
+        "util_welfare":   util_sw,
+        "egal_welfare":   egal_sw,
+        "pareto_size":    len(pareto),
+        "nash_distance":  nash_distance,
+        "ks_distance":    ks_distance,
+        "pareto_distance": pareto_distance,
     }
+
+# ─── Aggregation ────────────────────────────────────────────────────────────
+
+def aggregate_results(all_results):
+    """Aggregate results by strategy label, averaging across domains and runs."""
+    from collections import defaultdict
+    
+    aggregated = defaultdict(lambda: {
+        "agreed_count": 0,
+        "total_runs": 0,
+        "u_agent_sum": 0.0,
+        "u_opponent_sum": 0.0,
+        "util_welfare_sum": 0.0,
+        "egal_welfare_sum": 0.0,
+        "nash_distance_sum": 0.0,
+        "ks_distance_sum": 0.0,
+        "pareto_distance_sum": 0.0,
+        "rounds_sum": 0,
+        "nash_count": 0,
+        "ks_count": 0,
+        "pareto_count": 0,
+    })
+    
+    for r in all_results:
+        label = r["label"]
+        agg = aggregated[label]
+        
+        agg["total_runs"] += 1
+        if r["agreed"]:
+            agg["agreed_count"] += 1
+            agg["u_agent_sum"] += r["u_agent"]
+            agg["u_opponent_sum"] += r["u_opponent"]
+            if r["util_welfare"] is not None:
+                agg["util_welfare_sum"] += r["util_welfare"]
+            if r["egal_welfare"] is not None:
+                agg["egal_welfare_sum"] += r["egal_welfare"]
+            agg["rounds_sum"] += r["rounds"]
+        
+        if r["nash_distance"] is not None:
+            agg["nash_distance_sum"] += r["nash_distance"]
+            agg["nash_count"] += 1
+        if r["ks_distance"] is not None:
+            agg["ks_distance_sum"] += r["ks_distance"]
+            agg["ks_count"] += 1
+        if r["pareto_distance"] is not None:
+            agg["pareto_distance_sum"] += r["pareto_distance"]
+            agg["pareto_count"] += 1
+    
+    results = []
+    for label, agg in aggregated.items():
+        agreed_count = agg["agreed_count"]
+        total_runs = agg["total_runs"]
+        
+        results.append({
+            "label": label,
+            "agreement_rate": f"{agreed_count}/{total_runs}",
+            "avg_rounds": round(agg["rounds_sum"] / agreed_count, 2) if agreed_count > 0 else None,
+            "avg_u_agent": round(agg["u_agent_sum"] / agreed_count, 4) if agreed_count > 0 else None,
+            "avg_u_opponent": round(agg["u_opponent_sum"] / agreed_count, 4) if agreed_count > 0 else None,
+            "avg_util_welfare": round(agg["util_welfare_sum"] / agreed_count, 4) if agreed_count > 0 else None,
+            "avg_egal_welfare": round(agg["egal_welfare_sum"] / agreed_count, 4) if agreed_count > 0 else None,
+            "avg_nash_distance": round(agg["nash_distance_sum"] / agg["nash_count"], 4) if agg["nash_count"] > 0 else None,
+            "avg_ks_distance": round(agg["ks_distance_sum"] / agg["ks_count"], 4) if agg["ks_count"] > 0 else None,
+            "avg_pareto_distance": round(agg["pareto_distance_sum"] / agg["pareto_count"], 4) if agg["pareto_count"] > 0 else None,
+        })
+    
+    return results
 
 # ─── Print ───────────────────────────────────────────────────────────────────
 
 def print_table(results):
-    headers = ["Label", "Agreed", "Rounds", "U(agent)", "U(opp)", "Util SW", "Egal SW", "Nash Dist"]
-    col_w   = [36, 7, 7, 10, 10, 9, 9, 10]
+    headers = ["Label", "Agreement", "Rounds", "U(agent)", "U(opp)", "Util SW", "Egal SW", "Nash Dist", "KS Dist", "Pareto Dist"]
+    col_w   = [36, 11, 8, 10, 10, 10, 10, 11, 11, 12]
 
     header_row = "  ".join(h.ljust(w) for h, w in zip(headers, col_w))
     print("\n" + "=" * len(header_row))
@@ -130,41 +172,53 @@ def print_table(results):
     for r in results:
         row = [
             r["label"],
-            "✓" if r["agreed"] else "✗",
-            str(r["rounds"]),
-            str(r["u_agent"]),
-            str(r["u_opponent"]),
-            str(r["util_welfare"]) if r["util_welfare"] else "—",
-            str(r["egal_welfare"]) if r["egal_welfare"] else "—",
-            str(r["nash_distance"]) if r["nash_distance"] else "—",
+            r["agreement_rate"],
+            str(r["avg_rounds"]) if r["avg_rounds"] is not None else "—",
+            str(r["avg_u_agent"]) if r["avg_u_agent"] is not None else "—",
+            str(r["avg_u_opponent"]) if r["avg_u_opponent"] is not None else "—",
+            str(r["avg_util_welfare"]) if r["avg_util_welfare"] is not None else "—",
+            str(r["avg_egal_welfare"]) if r["avg_egal_welfare"] is not None else "—",
+            str(r["avg_nash_distance"]) if r["avg_nash_distance"] is not None else "—",
+            str(r["avg_ks_distance"]) if r["avg_ks_distance"] is not None else "—",
+            str(r["avg_pareto_distance"]) if r["avg_pareto_distance"] is not None else "—",
         ]
         print("  ".join(str(v).ljust(w) for v, w in zip(row, col_w)))
 
     print("=" * len(header_row))
-
-    agreed = [r for r in results if r["agreed"]]
-    print(f"\nAgreement rate: {len(agreed)}/{len(results)}")
-    if agreed:
-        avg_u  = sum(r["u_agent"] for r in agreed) / len(agreed)
-        avg_sw = sum(r["util_welfare"] for r in agreed if r["util_welfare"]) / len(agreed)
-        best   = max(agreed, key=lambda r: r["u_agent"])
-        print(f"Avg agent utility (when agreed): {avg_u:.4f}")
-        print(f"Avg utilitarian welfare:         {avg_sw:.4f}")
-        print(f"Best strategy (agent utility):   {best['label']} → {best['u_agent']}")
+    
+    best = max(results, key=lambda r: r["avg_u_agent"] if r["avg_u_agent"] is not None else 0)
+    print(f"\nBest strategy (avg agent utility): {best['label']} → {best['avg_u_agent']}")
 
 # ─── Main ────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    print("Running BOA strategy tournament...\n")
-    results = []
+    print(f"Running BOA strategy evaluation on {N_DOMAINS} domains with {N_RUNS_PER_STRATEGY} runs per strategy...\n")
+    
+    all_results = []
+    total_experiments = len(COMBOS) * N_DOMAINS * N_RUNS_PER_STRATEGY
+    completed = 0
+    
     for (bidding, acceptance, opp_model, label) in COMBOS:
-        print(f"  Running: {label}...")
-        try:
-            r = run_session(bidding, acceptance, opp_model, label)
-            results.append(r)
-        except Exception as e:
-            import traceback
-            print(f"    ERROR: {e}")
-            traceback.print_exc()
-
-    print_table(results)
+        print(f"Strategy: {label}")
+        for domain_num in range(N_DOMAINS):
+            print(f"  Domain {domain_num:02d}: ", end="", flush=True)
+            for run in range(N_RUNS_PER_STRATEGY):
+                try:
+                    r = run_session(bidding, acceptance, opp_model, label, domain_num)
+                    all_results.append(r)
+                    completed += 1
+                    if (run + 1) % 2 == 0:
+                        print(".", end="", flush=True)
+                except Exception as e:
+                    print(f"E", end="", flush=True)
+                    import traceback
+                    traceback.print_exc()
+            print(f" ✓ ({completed}/{total_experiments})")
+        print()
+    
+    print("\n" + "="*120)
+    print("AGGREGATED RESULTS (Averaged across all domains and runs)")
+    print("="*120)
+    
+    aggregated = aggregate_results(all_results)
+    print_table(aggregated)
