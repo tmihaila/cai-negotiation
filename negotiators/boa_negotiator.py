@@ -3,6 +3,7 @@ from negmas import SAONegotiator, ResponseType
 from bidding.bidding_strategy import TimeBasedBidding
 from bidding.adaptive_bidding import AdaptiveBidding
 from bidding.tit_for_tat import TitForTatBidding
+from bidding.predictive_tit_for_tat import PredictiveTitForTatBidding
 from bidding.micro import MiCROBidding
 
 from acceptance.acceptance_strategies import ACnext, ACasp, AClow
@@ -44,6 +45,8 @@ class BOANegotiator(SAONegotiator):
             self.bidding = AdaptiveBidding(self.ufun, self.opp_model)
         elif self._bidding_name == "titfortat":
             self.bidding = TitForTatBidding(self.ufun)
+        elif self._bidding_name == "predictive_titfortat": 
+            self.bidding = PredictiveTitForTatBidding(self.ufun, self.opp_model)
         elif self._bidding_name == "micro":
             self.bidding = MiCROBidding(self.ufun, self.opp_model)
         else:
@@ -75,6 +78,8 @@ class BOANegotiator(SAONegotiator):
             self.bidding.update_opponent_history(offer)
         elif self._bidding_name == "titfortat":
             self.bidding.update_opponent_history(offer)
+        elif self._bidding_name == "predictive_titfortat":         
+            self.bidding.update_opponent_history(offer, state.time)
         elif self._bidding_name == "micro":
             self.bidding.update_opponent_offer(offer)
 

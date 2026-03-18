@@ -14,6 +14,7 @@ COMBOS = [
     ("timebased", "aclow",  "gp",        "TimeBased+AClow+GP"),
     ("titfortat", "acnext", "bayesian",  "TitForTat+ACnext+Bayesian"),
     ("micro",     "acasp",  "frequency", "MiCRO+ACasp+Frequency"),
+    ("predictive_titfortat", "acnext", "gp", "PredictiveTfT+ACnext+GP"),
 ]
 
 
