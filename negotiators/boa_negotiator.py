@@ -6,7 +6,7 @@ from bidding.tit_for_tat import TitForTatBidding
 from bidding.predictive_tit_for_tat import PredictiveTitForTatBidding
 from bidding.micro import MiCROBidding
 
-from acceptance.acceptance_strategies import ACnext, ACasp, AClow
+from acceptance.acceptance_strategies import ACnext, ACasp, AClow, ACnew
 
 from opponent_modeling.frequency_opponent_model import FrequencyOpponentModel
 from opponent_modeling.bayesian_opponent_model import BayesianOpponentModel
@@ -59,6 +59,8 @@ class BOANegotiator(SAONegotiator):
             self.acceptance = ACasp(self.ufun, self.bidding)
         elif self._acceptance_name == "aclow":
             self.acceptance = AClow(self.ufun, self.bidding)
+        elif self._acceptance_name == "acnew":
+            self.acceptance = ACnew(self.ufun, self.bidding)
         else:
             raise ValueError(f"Unknown acceptance strategy: {self._acceptance_name}")
 
