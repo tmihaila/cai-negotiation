@@ -28,6 +28,7 @@ COMBOS = [
     ("titfortat", "acasp",  "bayesian", "TitForTat + ACasp + Bayesian"),
     ("micro",     "acasp",  "frequency", "MiCRO + ACasp + Frequency"),
     ("predictive_titfortat", "acnext", "gp", "PredictiveTfT+ACnext+GP"),
+    ("predictive_titfortat", "acnew", "gp", "PredictiveTfT+ACnew+GP"),
 ]
 
 # ─── Runner ──────────────────────────────────────────────────────────────────
