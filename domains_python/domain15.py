@@ -29,7 +29,7 @@ ufun_a = LUFun(
         0.29333,
     ],
     issues=issues,
-    reserved_value=0.0,
+    reserved_value=0.4,
 )
 
 # Agent B utility function
@@ -49,5 +49,5 @@ ufun_b = LUFun(
         0.04455,
     ],
     issues=issues,
-    reserved_value=0.0,
+    reserved_value=0.4,
 )
