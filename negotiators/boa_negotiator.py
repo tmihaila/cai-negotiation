@@ -5,6 +5,7 @@ from bidding.adaptive_bidding import AdaptiveBidding
 from bidding.tit_for_tat import TitForTatBidding
 from bidding.predictive_tit_for_tat import PredictiveTitForTatBidding
 from bidding.micro import MiCROBidding
+from bidding.hybrid_bidding import HybridBidding
 
 from acceptance.acceptance_strategies import ACnext, ACasp, AClow, ACnew
 
@@ -49,6 +50,8 @@ class BOANegotiator(SAONegotiator):
             self.bidding = PredictiveTitForTatBidding(self.ufun, self.opp_model)
         elif self._bidding_name == "micro":
             self.bidding = MiCROBidding(self.ufun, self.opp_model)
+        elif self._bidding_name == "hybrid":
+            self.bidding = HybridBidding(self.ufun, self.opp_model)
         else:
             raise ValueError(f"Unknown bidding strategy: {self._bidding_name}")
 
@@ -84,6 +87,8 @@ class BOANegotiator(SAONegotiator):
             self.bidding.update_opponent_history(offer, state.time)
         elif self._bidding_name == "micro":
             self.bidding.update_opponent_offer(offer)
+        elif self._bidding_name == "hybrid":
+            self.bidding.update_opponent_history(offer)
 
         # Acceptance check — pass time and outcome_space, NOT state
         outcome_space = self.nmi.outcome_space
@@ -95,6 +100,6 @@ class BOANegotiator(SAONegotiator):
     def propose(self, state):
         bid = self.bidding.generate_bid(self.nmi.outcome_space, state.time)
         self._last_bid = bid
-        if self._acceptance_name == "aclow":
+        if self._acceptance_name in ("aclow", "acnew"):
             self.acceptance.record_my_bid(bid)
         return bid
