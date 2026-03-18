@@ -20,10 +20,12 @@ N_DOMAINS = 20
 # ─── Combos ──────────────────────────────────────────────────────────────────
 
 COMBOS = [
-    ("adaptive",  "acnext", "bayesian",  "Adaptive + ACnext + Bayesian"),
-    ("adaptive",  "acasp",  "frequency", "Adaptive + ACasp + Frequency"),
     ("timebased", "aclow",  "gp",        "TimeBased + AClow + GP"),
+    ("adaptive",  "acnext", "bayesian",  "Adaptive + ACnext + Bayesian"),
+    ("adaptive",  "acnew",  "frequency", "Adaptive + ACnew + Frequency"),
+    ("titfortat", "acnew",  "bayesian",  "TitForTat + ACnew + Bayesian 🥹"),
     ("titfortat", "acnext", "bayesian",  "TitForTat + ACnext + Bayesian"),
+    ("titfortat", "acasp",  "bayesian", "TitForTat + ACasp + Bayesian"),
     ("micro",     "acasp",  "frequency", "MiCRO + ACasp + Frequency"),
 ]
 
@@ -38,7 +40,12 @@ def run_session(bidding, acceptance, opponent_model, label, domain_num):
     
     session = SAOMechanism(issues=issues, n_steps=N_STEPS)
 
-    opponent = TimeBasedConcedingNegotiator(name="agent_b")
+    opponent = BOANegotiator(
+        bidding_strategy="micro",
+        acceptance_strategy="acasp",
+        opponent_model="frequency",
+        name="Opponent",
+    )
     agent    = BOANegotiator(
         bidding_strategy=bidding,
         acceptance_strategy=acceptance,
