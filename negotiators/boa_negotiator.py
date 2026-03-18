@@ -5,9 +5,7 @@ from bidding.adaptive_bidding import AdaptiveBidding
 from bidding.tit_for_tat import TitForTatBidding
 from bidding.micro import MiCROBidding
 
-from acceptance.acceptance_strategy import ACnext
-from acceptance.ac_asp import ACasp
-from acceptance.ac_low import AClow
+from acceptance.acceptance_strategies import ACnext, ACasp, AClow
 
 from opponent_modeling.frequency_opponent_model import FrequencyOpponentModel
 from opponent_modeling.bayesian_opponent_model import BayesianOpponentModel

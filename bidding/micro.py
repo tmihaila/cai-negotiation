@@ -1,80 +1,97 @@
 class MiCROBidding:
     """
-    MiCRO (Minimal Concession with Randomized Offers) Strategy.
-
-    Algorithm:
-    1. Maintain a sorted list of our own bids by descending utility.
-    2. When opponent sends a new offer, make the MINIMAL concession:
-       - If we can find a bid in our list that the opponent would prefer to their
-         last offer, propose the highest-utility such bid (minimal concession).
-       - Otherwise, stay at our current best bid (no concession needed yet).
-    3. This is game-theoretically optimal in self-play and requires no opponent model.
-
-    Simplified version:
-    - Track all our proposed bids.
-    - On each round, propose the bid with the highest self-utility that is
-      at least as good for the opponent as their last offer to us.
-    - If no such bid exists, propose our current best (no concession).
+    MiCRO: Minimal Concession Strategy.
+    Makes the smallest possible concession for each new opponent offer.
     """
 
     def __init__(self, ufun, opponent_model=None):
         self.ufun = ufun
-        self.opponent_model = opponent_model  # Used if available to estimate opponent utility
+        self.opponent_model = opponent_model
         self._last_opponent_offer = None
-        self._my_bids = []        # All bids we've made, sorted by our utility
-        self._outcome_space = None
+        self._my_bids = []
         self._all_outcomes = None
+        self._cached_bid = None
 
     def update_opponent_offer(self, offer):
         self._last_opponent_offer = offer
-
-    def _build_outcome_list(self, outcome_space):
-        """Build and cache a sorted list of all outcomes by our utility (descending)."""
-        if self._all_outcomes is None:
-            outcomes = list(outcome_space.enumerate_or_sample(500))
-            self._all_outcomes = sorted(outcomes, key=lambda o: self.ufun(o), reverse=True)
-        return self._all_outcomes
-
-    def _opponent_utility_of(self, offer):
-        """
-        Estimate opponent's utility for an offer.
-        Uses opponent model if available; falls back to our own ufun as proxy.
-        """
-        if self.opponent_model is not None:
-            return self.opponent_model.estimate_utility(offer)
-        # Without opponent model, use a uniform proxy: prefer outcomes where
-        # our utility is lower (Pareto assumption: lower for us = better for them)
-        return 1.0 - float(self.ufun(offer))
+        self._cached_bid = None
 
     def target_utility(self, t):
-        # MiCRO doesn't use a target utility in the traditional sense
-        return self.ufun.reserved_value
+        if self._my_bids:
+            return float(self.ufun(self._my_bids[-1]))
+        return 1.0
+
+    def _sorted_outcomes(self, outcome_space):
+        if self._all_outcomes is None:
+            outcomes = list(outcome_space.enumerate_or_sample(500))
+            self._all_outcomes = sorted(
+                outcomes,
+                key=lambda o: float(self.ufun(o)),
+                reverse=True
+            )
+        return self._all_outcomes
+
+    def _opp_rank(self, offer, all_outcomes):
+        """Higher rank = better for opponent (worse for us)."""
+        for i, o in enumerate(all_outcomes):
+            if o == offer:
+                return i / max(1, len(all_outcomes) - 1)
+        return 0.5
+
+    def _opp_utility(self, offer, all_outcomes):
+        if (self.opponent_model is not None
+                and hasattr(self.opponent_model, "total_offers")
+                and self.opponent_model.total_offers >= 5):
+            return self.opponent_model.estimate_utility(offer)
+        return self._opp_rank(offer, all_outcomes)
 
     def generate_bid(self, outcome_space, t):
-        outcomes = self._build_outcome_list(outcome_space)
+        if self._cached_bid is not None:
+            return self._cached_bid
 
+        outcomes = self._sorted_outcomes(outcome_space)
+
+        # First move: propose our best outcome
         if self._last_opponent_offer is None:
-            # First move: propose our best offer
-            best = outcomes[0] if outcomes else outcome_space.random_outcome()
-            self._my_bids.append(best)
-            return best
+            bid = outcomes[0]
+            self._my_bids.append(bid)
+            self._cached_bid = bid
+            return bid
 
-        # Estimate how good our last opponent offer is FOR THEM
-        opp_threshold = self._opponent_utility_of(self._last_opponent_offer)
+        # Find index of opponent's last offer in our sorted list
+        opp_idx = None
+        for i, o in enumerate(outcomes):
+            if o == self._last_opponent_offer:
+                opp_idx = i
+                break
 
-        # Find the highest-utility bid for us that the opponent would prefer
-        # (i.e., their utility >= threshold from their last offer)
-        best_for_us_acceptable = None
+        if opp_idx is None:
+            # Opponent offer not in our list — stay at last bid
+            last = self._my_bids[-1] if self._my_bids else outcomes[0]
+            self._cached_bid = last
+            return last
+
+        # MiCRO: find the outcome at the SAME index as the opponent's offer
+        # in our sorted list — this is the minimal concession.
+        # i.e. if opponent offered the 300th best outcome for us,
+        # we offer the 300th best outcome for them (which is the 300th
+        # from the END of our list = index len-300).
+        n = len(outcomes)
+        mirror_idx = n - 1 - opp_idx  # mirror position
+        mirror_idx = max(0, min(n - 1, mirror_idx))
+
+        # Find the best outcome for us that is at least as good for
+        # the opponent as the mirrored position
+        target_opp_rank = mirror_idx / max(1, n - 1)
+
+        # Walk from best-for-us, find first that meets opponent threshold
         for outcome in outcomes:
-            if self._opponent_utility_of(outcome) >= opp_threshold:
-                best_for_us_acceptable = outcome
-                break  # outcomes sorted by our utility descending, so first match is best
+            opp_u = self._opp_rank(outcome, outcomes)
+            if opp_u >= target_opp_rank:
+                self._my_bids.append(outcome)
+                self._cached_bid = outcome
+                return outcome
 
-        if best_for_us_acceptable is not None:
-            self._my_bids.append(best_for_us_acceptable)
-            return best_for_us_acceptable
-
-        # No minimal concession possible: stay at current best bid
-        if self._my_bids:
-            return self._my_bids[-1]
-        return outcomes[0] if outcomes else outcome_space.random_outcome()
+        last = self._my_bids[-1] if self._my_bids else outcomes[0]
+        self._cached_bid = last
+        return last
