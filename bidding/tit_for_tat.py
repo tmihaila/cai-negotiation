@@ -3,48 +3,46 @@ class TitForTatBidding:
     Tit-for-Tat (imitative) bidding strategy.
     Mirrors the opponent's concession size.
 
-    - If opponent makes a large concession (increases utility for us), we do the same.
-    - If opponent makes no concession, we don't either.
-    - Starts by proposing our best bid; concedes proportionally to opponent.
-
-    Note: "concession" in TfT terms means the opponent offered us more utility
-    than they did previously.
+    Fix: target_utility() no longer mutates state on every call.
+    State is only updated in update_opponent_history(), which is called
+    once per round from the negotiator. generate_bid() and acceptance
+    checks can call target_utility() freely without side effects.
     """
 
     def __init__(self, ufun, sensitivity=1.0):
         self.ufun = ufun
-        self.sensitivity = sensitivity  # How much we mirror the opponent (1.0 = equal)
+        self.sensitivity = sensitivity
         self._opponent_utility_history = []
         self._my_last_utility = 1.0  # Start at our best
 
     def update_opponent_history(self, offer):
-        if offer is not None:
-            u = self.ufun(offer)
-            self._opponent_utility_history.append(u)
+        """
+        Called once per round when opponent makes an offer.
+        This is the only place we update _my_last_utility.
+        """
+        if offer is None:
+            return
+        u = self.ufun(offer)
+        self._opponent_utility_history.append(u)
 
-    def _opponent_last_concession(self):
-        """
-        Compute the opponent's most recent concession as delta in their utility to us.
-        A positive concession means they moved toward an offer that's better for us.
-        """
-        if len(self._opponent_utility_history) < 2:
-            return 0.0
-        delta = (
-            self._opponent_utility_history[-1]
-            - self._opponent_utility_history[-2]
-        )
-        return delta  # Positive = they gave us more utility (they conceded)
+        # Compute concession and update our target
+        if len(self._opponent_utility_history) >= 2:
+            delta = (
+                self._opponent_utility_history[-1]
+                - self._opponent_utility_history[-2]
+            )
+            # Positive delta = opponent gave us more utility = they conceded
+            # We mirror by lowering our own target by the same amount
+            self._my_last_utility = max(
+                self.ufun.reserved_value,
+                self._my_last_utility - self.sensitivity * delta
+            )
 
     def target_utility(self, t):
         """
-        We decrease our target by the same amount the opponent recently conceded to us.
-        If they gave us 0.05 more utility, we lower our target by 0.05 * sensitivity.
+        Read-only: returns current target utility without mutating state.
+        Safe to call multiple times per round.
         """
-        concession = self._opponent_last_concession()
-        self._my_last_utility = max(
-            self.ufun.reserved_value,
-            self._my_last_utility - self.sensitivity * concession
-        )
         return self._my_last_utility
 
     def generate_bid(self, outcome_space, t):

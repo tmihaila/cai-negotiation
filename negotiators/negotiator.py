@@ -1,7 +1,7 @@
 from negmas import SAONegotiator, ResponseType
 
 from bidding.bidding_strategy import TimeBasedBidding
-from acceptance.acceptance_strategy import AcceptanceStrategy
+from acceptance.acceptance_strategies import AcceptanceStrategy
 from opponent_modeling.frequency_opponent_model import OpponentModel
 
 
